@@ -1,0 +1,75 @@
+---
+title: "Coursera Machine Learning Assignment"
+author: "F.J.Salguero"
+date: "October 15, 2015"
+output: html_document
+---
+
+## Summary
+This is the assignment for the Coursera course "Machine Learning". The objective of this exercise is to be able to assess whether a subject is performing weight lifting in the correct way or is commiting some kind of mistake.
+
+## Data
+
+The dataset is the "Weight Lifting Exercise Dataset" from the "Human Activity Recognition" group. The "classe" variable establish whether the subject is performing the weight lifting in the correct way (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+The first step is loading and cleaning the data, since there are many NA's and #DIV0! values. Also the training set has more parameters than the test set, so they are useless for this exercise.
+
+```{r,cache=T}
+library(caret)
+set.seed(111)
+
+# The files contain blank fields, NA's and #DIV/0! errors. All of them will be coherced into NA's.
+trainset<-read.table("pml-training.csv",header=T,sep=",",na.strings=c("NA","","#DIV/0!"))
+testset<-read.table("pml-testing.csv",header=T,sep=",",na.strings=c("NA","","#DIV/0!"))
+
+#Remove NA's columns
+testset<-testset[,colSums(is.na(testset))<nrow(testset)]
+#Only variables that appear in the test set will be useful.
+classe<-trainset$classe
+trainset<-trainset[,names(trainset) %in% names(testset)]
+trainset$classe<-classe
+```
+
+```{r}
+#Now we remove the X,user name, timestamps and window variables, to avoid including those ID parameters in the model.
+
+trainset<-trainset[,-c(1:7)]
+```
+
+## Modeling
+
+The chosen technique is Random Forest. This is a very resource intensive method, and the dataset is quite big, so we'll use parallel computing and use only a part of the original training set to build the model. The rest of the data will be used as a test set to assess the out of sample accuracy of the model.
+
+```{r, cache=T}
+#Random forest with such a big data set is very resource intensive, so I'll use parallel computing.
+library(doMC)
+registerDoMC(8)
+#The training data is still very big, so we can use part for the actual training and the other for testing.
+intrain<-createDataPartition(y=trainset$classe,p=0.7,list=FALSE)
+intrainset<-trainset[intrain,]
+inverifset<-trainset[-intrain,]
+
+fitRF<-train(classe~.,data=intrainset,method='rf')
+```
+```{r,cache=T}
+#Now we check the in-sample and out-sample errors.
+#Insample
+insample<-table(intrainset$classe,predict(fitRF,newdata=intrainset))
+print(insample)
+sum(diag(insample))/nrow(intrainset)
+outsample<-table(inverifset$classe,predict(fitRF,newdata=inverifset))
+print(outsample)
+sum(diag(outsample))/nrow(inverifset)
+```
+
+## Prediction
+
+Once we are satisfied with the model we apply it to the test set whose values we don't know. This is the final result:
+
+```{r,cache=T}
+answers<-predict(fitRF,newdata=testset)
+#The prediction is numeric, so we need to translate them into the exercises' ids.
+code<-c('A','B','C','D','E')
+
+print(rbind(testset$problem_id,code[answers]))
+```
